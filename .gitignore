@@ -1,0 +1,10 @@
+.env
+*.tar
+vendor/
+openlist-data/
+pgdata/
+strm/
+dist/
+__pycache__/
+*.pyc
+.DS_Store

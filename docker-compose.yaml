@@ -1,0 +1,135 @@
+# 影视自动化一体化 compose：OpenList + Mediary Scout(web/postgres/pansou)
+#                          + strm-sync + QQ 机器人壳。
+#
+# 本文件只负责部署，镜像由 scripts/build-images.sh 构建（或从 tar 导入）。
+#
+# 用法：
+#   cp .env.example .env   # 填好各项
+#   ./scripts/build-images.sh        # 构建 mediary-scout-web / mediary-strm-sync / mediary-qqbot
+#   docker compose up -d             # 全部六个服务
+#
+# 极空间面板方式：Compose → 新增项目 → 选择「存储位置」文件夹 → 粘贴本文件 →
+# 勾选「添加 .env」粘贴环境变量。所有 ./ 相对路径以存储位置为根目录。
+#
+# 端口：web ${WEB_PORT:-3300}，openlist 5244。其余服务不对外。
+
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  openlist:
+    image: openlistteam/openlist:latest
+    container_name: openlist
+    ports:
+      - "5244:5244"
+    volumes:
+      - ./openlist-data:/opt/openlist/data
+      # Strm 驱动的本地输出目录（极影视直接扫这里，见教程「极影视建库」）
+      - ./strm:/strm
+    logging: *default-logging
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mediatrack
+      POSTGRES_USER: mediatrack
+      POSTGRES_PASSWORD: mediatrack
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mediatrack -d mediatrack"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    logging: *default-logging
+    restart: unless-stopped
+
+  pansou:
+    # 镜像已随 tar 包导入（ghcr 国内镜像版），直接引用即可
+    image: ghcr.nju.edu.cn/fish2018/pansou-web:latest
+    # 好频道默认配置（内联，免去额外界面的 env_file）：不加则 pansou 只索引磁力频道，搜不到网盘分享
+    environment:
+      ENABLED_PLUGINS: labi,zhizhen,shandian,duoduo,muou,wanou,hunhepan,jikepan,panwiki,pansearch,panta,qupansou,hdr4k,pan666,susu,xuexizhinan,panyq,ouge,huban,cyg,erxiao,miaoso,fox4k,pianku,clmao,wuji,cldi,xiaozhang,libvio,leijing,xb6v,xys,ddys,hdmoli,clxiong,jutoushe,sdso,xiaoji,xdyh,haisou,bixin,djgou,nyaa,xinjuc,aikanzy,qupanshe,xdpan,discourse,yunsou,ahhhhfs,nsgame,quark4k,quarksoo,sousou,ash,feikuai,kkmao,alupan,ypfxw,mikuclub,daishudj,dyyj,meitizy,jsnoteclub,mizixing,lou1,yiove,zxzj,qingying,kkv
+      CHANNELS: tgsearchers4,Aliyun_4K_Movies,bdbdndn11,yunpanx,bsbdbfjfjff,yp123pan,sbsbsnsqq,yunpanxunlei,tianyifc,BaiduCloudDisk,txtyzy,peccxinpd,gotopan,PanjClub,kkxlzy,baicaoZY,MCPH01,MCPH02,MCPH03,bdwpzhpd,ysxb48,jdjdn1111,yggpan,MCPH086,zaihuayun,Q66Share,ucwpzy,shareAliyun,alyp_1,dianyingshare,Quark_Movies,XiangxiuNBB,ydypzyfx,ucquark,xx123pan,yingshifenxiang123,zyfb123,tyypzhpd,tianyirigeng,cloudtianyi,hdhhd21,Lsp115,oneonefivewpfx,qixingzhenren,taoxgzy,Channel_Shares_115,tyysypzypd,vip115hot,wp123zy,yunpan139,yunpan189,yunpanuc,yydf_hzl,leoziyuan,Q_dongman,yoyokuakeduanju,TG654TG,WFYSFX02,QukanMovie,yeqingjie_GJG666,movielover8888_film3,Baidu_netdisk,D_wusun,FLMdongtianfudi,KaiPanshare,QQZYDAPP,rjyxfx,PikPak_Share_Channel,btzhi,newproductsourcing,cctv1211,duan_ju,QuarkFree,yunpanNB,kkdj001,xxzlzn,pxyunpanxunlei,jxwpzy,kuakedongman,liangxingzhinan,xiangnikanj,solidsexydoll,guoman4K,zdqxm,kduanju,cilidianying,CBduanju,SharePanFilms,dzsgx,BooksRealm,Oscar_4Kmovies,douerpan,baidu_yppan,Q_jilupian,Netdisk_Movies,yunpanquark,ammmziyuan,ciliziyuanku,cili8888,jzmm_123pan,Q_dianying,domgmingapk,dianying4k,q_dianshiju,tgbokee,ucshare,godupan,gokuapan
+    logging: *default-logging
+    restart: unless-stopped
+
+  web:
+    image: mediary-scout-web:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pansou:
+        condition: service_started
+    environment:
+      MEDIA_TRACK_POSTGRES_URL: postgres://mediatrack:mediatrack@postgres:5432/mediatrack
+      PANSOU_BASE_URL: http://pansou
+      MEDIA_TRACK_SEARCH_PROVIDER: tmdb
+      MEDIA_TRACK_WORKFLOW_ADAPTER: pansou
+      # "115" 是「真实存储模式」的历史名字：实际网盘品牌由设置页连接的盘决定
+      # （夸克也在此模式下工作），不是写死 115 网盘。
+      MEDIA_TRACK_STORAGE_ADAPTER: "115"
+      # pansou + 真实存储必须配 vercel-ai，否则 worker 永远跑不动队列
+      MEDIA_TRACK_AGENT_ADAPTER: vercel-ai
+      MEDIA_TRACK_DEMO_SEED: "0"
+      # agent API 的 Bearer token；不设则所有 /api/agent/* 返回 404
+      MEDIA_TRACK_AGENT_TOKEN: ${MEDIA_TRACK_AGENT_TOKEN:-}
+      # DeepSeek（OpenAI 兼容）LLM 配置（原来靠 env_file 载入，面板兼容性差，改为显式声明）
+      AGENT_MODEL_BASE_URL: ${AGENT_MODEL_BASE_URL:-https://api.deepseek.com}
+      AGENT_MODEL_ID: ${AGENT_MODEL_ID:-deepseek-chat}
+      AGENT_MODEL_API_KEY: ${AGENT_MODEL_API_KEY:-}
+      TMDB_READ_TOKEN: ${TMDB_READ_TOKEN:-}
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    ports:
+      - "${WEB_PORT:-3300}:3000"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    logging: *default-logging
+    restart: unless-stopped
+
+  # 定时遍历 OpenList 的 Strm 驱动目录，触发本地 strm 生成
+  # （Mediary Scout 转存不经过 OpenList，不扫描的话新内容不会出现在 strm 里）
+  strm-sync:
+    image: mediary-strm-sync:latest
+    depends_on:
+      openlist:
+        condition: service_started
+    environment:
+      OPENLIST_URL: http://openlist:5244
+      OPENLIST_USER: ${OPENLIST_USER:-admin}
+      OPENLIST_PASSWORD: ${OPENLIST_PASSWORD:-}
+      # Strm 驱动在 OpenList 里的挂载路径（在 OpenList 里加 Strm 驱动时自己定的）
+      STRM_PATH: ${STRM_PATH:-/strm}
+      # 兜底扫描间隔（秒），默认 6 小时；QQ 点播完成时会即时触发一次扫描。
+      # 遍历会调夸克 API，不建议低于 600
+      SCAN_INTERVAL_S: ${SCAN_INTERVAL_S:-21600}
+      DIR_DELAY_S: ${DIR_DELAY_S:-1}
+    logging: *default-logging
+    restart: unless-stopped
+
+  qqbot:
+    image: mediary-qqbot:latest
+    depends_on:
+      web:
+        condition: service_started
+    environment:
+      QQ_BOT_APPID: ${QQ_BOT_APPID:-}
+      QQ_BOT_APPSECRET: ${QQ_BOT_APPSECRET:-}
+      # 机器人未在开放平台正式上线前必须连沙箱网关（1），上线后改 0
+      QQ_BOT_SANDBOX: ${QQ_BOT_SANDBOX:-1}
+      ALLOWED_OPENIDS: ${ALLOWED_OPENIDS:-}
+      MEDIARY_API_URL: http://web:3000
+      MEDIARY_AGENT_TOKEN: ${MEDIA_TRACK_AGENT_TOKEN:-}
+    logging: *default-logging
+    restart: unless-stopped
+
