@@ -39,13 +39,13 @@ strm-sync（本仓库）：定时/触发式扫描 ◀──┘
 
 - 夸克网盘账号（建议 SVIP，88VIP 送的即可）
 - OpenAI 兼容 LLM key（DeepSeek 等，agent 搜片用，按量计费很便宜）
-- QQ 开放平台的机器人 AppID/AppSecret（q.qq.com，个人主体可注册）
+- QQ 开放平台的机器人 AppID/AppSecret（申请流程见 [docs/QQ机器人申请与配置指南.md](docs/QQ机器人申请与配置指南.md)，个人主体可注册，约 15 分钟）
 - 极空间 NAS（或其他任何能跑 docker compose 的机器）
 
 ## 快速开始
 
 ```bash
-git clone https://github.com/你的用户名/qq-mediary-stack.git
+git clone https://github.com/keru-s/qq-mediary-stack.git
 cd qq-mediary-stack
 cp .env.example .env   # 填入 LLM key、QQ 凭证等
 ./scripts/build-images.sh
