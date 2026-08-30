@@ -99,7 +99,7 @@ class OpenListClient:
     def list_dir(self, path: str) -> list[dict]:
         data = self._request(
             "/api/fs/list",
-            {"path": path, "page": 1, "per_page": 0, "refresh": False},
+            {"path": path, "page": 1, "per_page": 0, "refresh": True},
         )
         if data.get("code") != 200:
             raise RuntimeError(f"列目录失败 {path}: {data.get('message')}")
